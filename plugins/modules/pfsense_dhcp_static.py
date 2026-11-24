@@ -31,7 +31,9 @@ options:
       The network interface.  This defaults to the only enabled DHCP interface if there is only one.
     type: str
   macaddr:
-    description: The mac address.  At least one of I(name) or I(macaddr) is required.
+    description:
+      - The MAC address. At least one of I(name) or I(macaddr) is required.
+      - The module matches MAC addresses case-insensitively and stores them in lowercase.
     type: str
   ipaddr:
     description: The IP address
@@ -263,7 +265,7 @@ class PFSenseDHCPStaticModule(PFSenseModuleBase):
 
         if params["state"] == "present":
 
-            self._get_ansible_param(obj, "macaddr", fname="mac", force=True)
+            obj["mac"] = (params["macaddr"] or "").lower()
             # Forced options
             for option in ["ipaddr", "hostname", "descr", "filename",
                            "rootpath", "defaultleasetime", "maxleasetime",
@@ -320,12 +322,15 @@ class PFSenseDHCPStaticModule(PFSenseModuleBase):
         self.result["netif"] = netif
 
     def _find_target(self):
-        if self.params["name"] is not None and self.params["macaddr"] is not None:
-            result = self.root_elt.findall("staticmap[cid='{0}'][mac='{1}']".format(self.params["name"], self.params["macaddr"]))
-        elif self.params["name"] is not None:
-            result = self.root_elt.findall("staticmap[cid='{0}']".format(self.params["name"]))
-        else:
-            result = self.root_elt.findall("staticmap[mac='{0}']".format(self.params["macaddr"]))
+        name = self.params["name"]
+        mac = self.params["macaddr"]
+        if mac is not None:
+            mac = mac.lower()
+        result = [
+            mapping for mapping in self.staticmaps
+            if (name is None or mapping.findtext("cid") == name)
+            and (mac is None or mapping.findtext("mac", "").lower() == mac)
+        ]
 
         if len(result) == 1:
             return result[0]
@@ -360,11 +365,11 @@ class PFSenseDHCPStaticModule(PFSenseModuleBase):
         """ generate pseudo-CLI command fields parameters to create an obj """
         values = ""
         if before is None:
-            values += self.format_cli_field(self.params, "macaddr")
+            values += self.format_cli_field(self.obj, "mac", fname="macaddr", default="")
             values += self.format_cli_field(self.params, "ipaddr")
             values += self.format_cli_field(self.params, "arp_table_static_entry", fvalue=self.fvalue_bool, default=False)
         else:
-            values += self.format_updated_cli_field(self.obj, before, "macaddr", add_comma=(values))
+            values += self.format_updated_cli_field(self.obj, before, "mac", fname="macaddr", add_comma=(values))
             values += self.format_updated_cli_field(self.obj, before, "ipaddr", add_comma=(values))
             values += self.format_updated_cli_field(self.obj, before, "arp_table_static_entry", fvalue=self.fvalue_bool, add_comma=(values))
         return values
